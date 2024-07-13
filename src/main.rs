@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::process::Command;
+use std::process::{Command,Stdio};
 
 fn get_system_architecture() -> String {
     let output = Command::new("arch")
@@ -17,12 +17,24 @@ fn get_hostname() -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
-fn set_hostname(new_hostname: &str) {
-    Command::new("hostnamectl")
+fn set_hostname() {
+    println!("请输入新的主机名：");
+    let mut new_hostname = String::new();
+    io::stdin().read_line(&mut new_hostname).expect("Failed to read line");
+    let new_hostname = new_hostname.trim();
+
+    let status = Command::new("sudo")
+        .arg("hostnamectl")
         .arg("set-hostname")
         .arg(new_hostname)
         .status()
         .expect("failed to execute process");
+
+    if status.success() {
+        println!("主机名已设置为 {}", new_hostname);
+    } else {
+        eprintln!("设置主机名失败。请确保您有足够的权限。");
+    }
 }
 
 fn get_package_count() -> String {
@@ -85,16 +97,35 @@ fn change_admin_password() {
     io::stdin().read_line(&mut new_password).expect("Failed to read line");
     let new_password = new_password.trim();
 
-    let status = Command::new("sh")
-        .arg("-c")
-        .arg(format!("echo 'root:{}' | chpasswd", new_password))
-        .status()
-        .expect("Failed to change password");
+    println!("请再次输入新密码：");
+    let mut confirm_password = String::new();
+    io::stdin().read_line(&mut confirm_password).expect("Failed to read line");
+    let confirm_password = confirm_password.trim();
 
-    if status.success() {
+    if new_password != confirm_password {
+        println!("两次输入的密码不一致。");
+        return;
+    }
+
+    let mut child = Command::new("sudo")
+        .arg("passwd")
+        .arg("root")
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("Failed to execute passwd command");
+
+    {
+        let child_stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        writeln!(child_stdin, "{}\n{}", new_password, new_password).expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait on passwd command");
+
+    if output.status.success() {
         println!("密码修改成功");
     } else {
-        println!("密码修改失败");
+        println!("密码修改失败，请确保您有足够的权限。");
+        io::stderr().write_all(&output.stderr).unwrap();
     }
 }
 
@@ -122,13 +153,7 @@ fn main() {
                 "-n" => println!("Number of packages: {}", get_package_count()),
                 "-d" => println!("Disk usage:\n{}", get_disk_usage()),
                 "-H" => println!("Hardware info:\n{}", get_hardware_info()),
-                "-s" => {
-                    if args.len() > 2 {
-                        set_hostname(&args[2]);
-                    } else {
-                        println!("请提供新的主机名");
-                    }
-                },
+                "-s" => set_hostname(),
                 "-c" => change_admin_password(),
                 _ => println!("未知参数: {}", arg),
             }
