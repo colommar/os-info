@@ -1,4 +1,6 @@
 # os-info 开发日志
+这是一个开源之夏项目的开发日志，已经被mr了。
+地址：https://gitee.com/openeuler/osinfor
 
 ## 获取
 
